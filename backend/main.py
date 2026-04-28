@@ -1,18 +1,35 @@
 import os
 from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import List
 import uvicorn
 from datetime import datetime
+from pathlib import Path
 
-from database import init_db, get_db, engine, Base, Game, Team, OddsSnapshot
-from models import GameResponse, GameWithOdds, TeamResponse, OddsSnapshotResponse, ImpliedProbability
-from odds_fetcher import fetch_nba_odds, fetch_nfl_odds, american_to_implied, american_to_decimal, american_to_fractional
-from elo import calculate_win_probability
+try:
+    from backend.database import init_db, get_db, engine, Base, Game, Team, OddsSnapshot
+    from backend.models import GameResponse, GameWithOdds, TeamResponse, OddsSnapshotResponse, ImpliedProbability
+    from backend.odds_fetcher import (
+        fetch_nba_odds,
+        fetch_nfl_odds,
+        american_to_implied,
+        american_to_decimal,
+        american_to_fractional,
+    )
+    from backend.elo import calculate_win_probability
+except ModuleNotFoundError:
+    from database import init_db, get_db, engine, Base, Game, Team, OddsSnapshot
+    from models import GameResponse, GameWithOdds, TeamResponse, OddsSnapshotResponse, ImpliedProbability
+    from odds_fetcher import fetch_nba_odds, fetch_nfl_odds, american_to_implied, american_to_decimal, american_to_fractional
+    from elo import calculate_win_probability
 
 API_KEY = os.getenv("NBA_ANALYTICS_API_KEY")
 app = FastAPI(title="NBA Analytics API")
+FRONTEND_STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 @app.middleware("http")
 async def add_security_headers(request, call_next):
@@ -36,7 +53,7 @@ origins = os.getenv("CORS_ALLOW_ORIGINS")
 if origins:
     allow_origins = [o.strip() for o in origins.split(",") if o.strip()]
 else:
-    allow_origins = ["http://localhost:3000"]
+    allow_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins,
@@ -51,11 +68,17 @@ async def startup_event():
 
 @app.get("/")
 async def root():
+    if (FRONTEND_STATIC_DIR / "index.html").exists():
+        return FileResponse(FRONTEND_STATIC_DIR / "index.html")
     return {"message": "NBA Analytics API"}
 
 @app.get("/health")
-async def health():
-    return {"status": "ok"}
+async def health(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ok"}
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database unavailable")
 
 @app.get("/api/games", response_model=List[GameResponse], dependencies=[Depends(verify_api_key)])
 async def get_games(sport: str = None, db: Session = Depends(get_db)):
@@ -226,5 +249,20 @@ async def get_teams(db: Session = Depends(get_db)):
     teams = db.query(Team).all()
     return teams
 
+if FRONTEND_STATIC_DIR.exists():
+    next_static_dir = FRONTEND_STATIC_DIR / "_next"
+    if next_static_dir.exists():
+        app.mount("/_next", StaticFiles(directory=next_static_dir), name="next_static")
+    app.mount("/static", StaticFiles(directory=FRONTEND_STATIC_DIR), name="frontend_static")
+
+    @app.get("/{full_path:path}")
+    async def frontend_fallback(full_path: str):
+        if full_path.startswith(("api", "docs", "redoc", "openapi.json", "health")):
+            raise HTTPException(status_code=404, detail="Not found")
+        requested = FRONTEND_STATIC_DIR / full_path
+        if requested.is_file():
+            return FileResponse(requested)
+        return FileResponse(FRONTEND_STATIC_DIR / "index.html")
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")))

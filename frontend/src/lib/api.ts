@@ -1,10 +1,9 @@
 export const getApiBase = (): string => {
-  // Use local backend during local development; otherwise use deployed backend
-  if (typeof window !== 'undefined') {
-    const host = window.location.hostname
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return 'http://localhost:8000/api'
-    }
+  const envBase = process.env.NEXT_PUBLIC_API_BASE_URL?.trim()
+  if (envBase) {
+    return envBase.replace(/\/$/, '')
   }
-  return 'https://nba-analytics-backend.onrender.com/api'
+
+  // Single-service default: same-origin API
+  return '/api'
 }
