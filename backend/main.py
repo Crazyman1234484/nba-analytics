@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Depends, HTTPException
+import os
+from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List
@@ -10,12 +11,35 @@ from models import GameResponse, GameWithOdds, TeamResponse, OddsSnapshotRespons
 from odds_fetcher import fetch_nba_odds, fetch_nfl_odds, american_to_implied, american_to_decimal, american_to_fractional
 from elo import calculate_win_probability
 
+API_KEY = os.getenv("NBA_ANALYTICS_API_KEY")
 app = FastAPI(title="NBA Analytics API")
 
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = "default-src 'self'"
+    return response
+
+def verify_api_key(x_api_key: str = Header(None, alias="X-API-KEY")):
+    if API_KEY:
+        if not x_api_key or x_api_key != API_KEY:
+            raise HTTPException(status_code=401, detail="Invalid API key")
+    return True
+
+# app definition moved earlier to ensure middleware has a valid app instance
+
 # CORS middleware
+origins = os.getenv("CORS_ALLOW_ORIGINS")
+if origins:
+    allow_origins = [o.strip() for o in origins.split(",") if o.strip()]
+else:
+    allow_origins = ["http://localhost:3000"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -29,7 +53,11 @@ async def startup_event():
 async def root():
     return {"message": "NBA Analytics API"}
 
-@app.get("/api/games", response_model=List[GameResponse])
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+@app.get("/api/games", response_model=List[GameResponse], dependencies=[Depends(verify_api_key)])
 async def get_games(sport: str = None, db: Session = Depends(get_db)):
     """Get all games, optionally filtered by sport"""
     if sport:
@@ -38,7 +66,7 @@ async def get_games(sport: str = None, db: Session = Depends(get_db)):
         games = db.query(Game).order_by(Game.game_time).all()
     return games
 
-@app.get("/api/games/{game_id}", response_model=GameWithOdds)
+@app.get("/api/games/{game_id}", response_model=GameWithOdds, dependencies=[Depends(verify_api_key)])
 async def get_game_with_odds(game_id: str, db: Session = Depends(get_db)):
     """Get game with odds and model probability"""
     game = db.query(Game).filter(Game.id == game_id).first()
@@ -80,7 +108,7 @@ async def get_game_with_odds(game_id: str, db: Session = Depends(get_db)):
         model_probability=model_prob
     )
 
-@app.get("/api/odds/conversion")
+@app.get("/api/odds/conversion", dependencies=[Depends(verify_api_key)])
 async def convert_odds(american_odds: int):
     """Convert American odds to other formats"""
     return ImpliedProbability(
@@ -90,7 +118,7 @@ async def convert_odds(american_odds: int):
         fractional_odds=american_to_fractional(american_odds)
     )
 
-@app.post("/api/odds/fetch")
+@app.post("/api/odds/fetch", dependencies=[Depends(verify_api_key)])
 async def fetch_and_store_odds(sport: str = "basketball", db: Session = Depends(get_db)):
     """Fetch odds from API and store in database"""
     if sport == "basketball":
@@ -192,7 +220,7 @@ async def fetch_and_store_odds(sport: str = "basketball", db: Session = Depends(
     
     return {"message": f"Stored {stored_count} odds snapshots"}
 
-@app.get("/api/teams", response_model=List[TeamResponse])
+@app.get("/api/teams", response_model=List[TeamResponse], dependencies=[Depends(verify_api_key)])
 async def get_teams(db: Session = Depends(get_db)):
     """Get all teams with Elo ratings"""
     teams = db.query(Team).all()

@@ -7,6 +7,7 @@ import MatchBreakdown from '@/components/MatchBreakdown'
 import OddsAnalysis from '@/components/OddsAnalysis'
 import SportFilter from '@/components/SportFilter'
 import { RefreshCw } from 'lucide-react'
+import { getApiBase } from '@/lib/api'
 
 export default function Home() {
   const [games, setGames] = useState<Game[]>([])
@@ -21,8 +22,8 @@ export default function Home() {
 
   const fetchGames = async () => {
     setLoading(true)
-    try {
-      const response = await fetch(`http://localhost:8000/api/games?sport=${selectedSport}`)
+      try {
+      const response = await fetch(`${getApiBase()}/games?sport=${selectedSport}`)
       if (!response.ok) throw new Error('Failed to fetch games')
       const data = await response.json()
       setGames(data)
@@ -41,7 +42,7 @@ export default function Home() {
 
   const fetchGameDetails = async (gameId: string) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/games/${gameId}`)
+      const response = await fetch(`${getApiBase()}/games/${gameId}`)
       const data = await response.json()
       setSelectedGame(data)
     } catch (error) {
