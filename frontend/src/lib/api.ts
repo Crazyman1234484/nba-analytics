@@ -4,6 +4,13 @@ export const getApiBase = (): string => {
     return envBase.replace(/\/$/, '')
   }
 
-  // Single-service default: same-origin API
-  return '/api'
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'http://localhost:8000/api'
+    }
+  }
+
+  // Vercel + Render default when env is not configured.
+  return 'https://nba-analytics-backend.onrender.com/api'
 }

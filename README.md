@@ -85,6 +85,36 @@ npm run dev
 
 The frontend will run on `http://localhost:3000` (or the next available port)
 
+## Vercel + Render Deployment
+
+This project is configured to run with:
+- Frontend on Vercel: `https://sports-betting-odds-two.vercel.app`
+- Backend on Render: `https://nba-analytics-backend.onrender.com`
+
+### Frontend (Vercel) env vars
+
+Set this in Vercel project settings:
+```bash
+NEXT_PUBLIC_API_BASE_URL=https://nba-analytics-backend.onrender.com/api
+```
+
+### Backend (Render) env vars
+
+Set these in Render service settings:
+```bash
+CORS_ALLOW_ORIGINS=https://sports-betting-odds-two.vercel.app
+DATABASE_URL=sqlite:///./nba_analytics.db
+```
+
+For a public dashboard, keep `NBA_ANALYTICS_API_KEY` empty.  
+If you set `NBA_ANALYTICS_API_KEY`, browser requests must include `X-API-KEY` or they will return 401.
+
+### Quick validation
+
+1. Open `https://sports-betting-odds-two.vercel.app` and confirm games load.
+2. Check API health: `https://nba-analytics-backend.onrender.com/health`
+3. Check games endpoint: `https://nba-analytics-backend.onrender.com/api/games?sport=basketball`
+
 ## Usage
 
 1. Start both the backend and frontend servers
